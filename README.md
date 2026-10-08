@@ -2,6 +2,10 @@
 
 A one-line status bar for [Claude Code](https://claude.com/claude-code), written as a mod (a plugin of function hooks). It sits just above the prompt and shows what you usually want to glance at while you work:
 
+![Better Status Bar in a Claude Code session, with the containers menu open](docs/screenshot.png)
+
+The same line as text:
+
 ```
  Opus 5.5 medium │ my-app ⎇ main │ web/src │ ctx ━━━─────── 30% 60k/200k │ session ━━━━────── 42% 2h10m │ week ━━━━━━━━── 81% 3d4h │ $1.23 │ 🐳 Containers
 ```
