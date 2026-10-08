@@ -1,0 +1,12 @@
+{
+  "name": "better-status-bar",
+  "owner": { "name": "ricciric" },
+  "description": "Better Status Bar, a Claude Code mod",
+  "plugins": [
+    {
+      "name": "better-status-bar",
+      "source": "./",
+      "description": "A one-line, width-aware status bar for Claude Code with usage bars and a Docker containers menu."
+    }
+  ]
+}

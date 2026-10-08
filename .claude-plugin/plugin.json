@@ -1,0 +1,9 @@
+{
+  "name": "better-status-bar",
+  "version": "1.0.0",
+  "description": "A one-line, width-aware status bar for Claude Code: model, repo, branch, folder, context / session / weekly usage bars, cost, and a clickable list of running Docker containers.",
+  "author": { "name": "ricciric", "url": "https://github.com/ricciric" },
+  "repository": "https://github.com/ricciric/better-status-bar",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
