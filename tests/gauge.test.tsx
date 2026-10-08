@@ -1,9 +1,20 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import type { On } from 'claude-code'
+
 import type { Snapshot } from '../types'
 import { hostPorts, parsePs } from '../hooks/docker'
 import { bar, colorFor, folderIn, untilReset } from '../hooks/gauge'
 import { fit, widthOf } from '../hooks/layout'
+
+
+/** Stands for the engine beneath the band, which draws nothing there by itself. */
+function engineBand(on: On, text?: string) {
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return text ? <Text>{text}</Text> : <Box />
+  })
+}
 
 test('bars fill in half cells as a thin line', async () => {
   expect(bar(0)).toEqual({ filled: '', empty: '──────────' })
@@ -37,6 +48,7 @@ test('reset countdowns', async () => {
 
 test('the band shows repo, branch, folder and the usage bars', async ($, on) => {
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on)
   on('session.model', () => ({ value: 'Opus 5.5' }) as never)
   on('session.cwd', () => ({ value: '/x/my-cool-repo/portal' }) as never)
   on('session.repo', () => ({ value: { root: '/x/my-cool-repo', remote: null, internal: false, name: null } }) as never)
@@ -116,6 +128,7 @@ test('docker ps rows give names, status and published host ports', async () => {
 
 test('the containers button lists containers; only those with a page can be clicked, and open it', async ($, on) => {
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on)
   const opened: string[] = []
   const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
   on('session.model', () => ({ value: 'Opus 5.5' }) as never)
@@ -160,6 +173,7 @@ test('the containers button lists containers; only those with a page can be clic
 
 test('the containers button reads "🐳 Containers" after a separator', async ($, on) => {
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on)
   on('session.model', () => ({ value: 'Opus 5.5' }) as never)
   on('session.cwd', () => ({ value: '/x' }) as never)
   on('session.repo', () => ({ value: null }) as never)
@@ -175,5 +189,25 @@ test('the containers button reads "🐳 Containers" after a separator', async ($
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('"label":"🐳 Containers"')
   expect(drawn).toMatch(/" │ "\]\},\{"type":"Button"/)
+  await ui.unmount()
+})
+
+test('another mod drawing in the band stays visible under the status line', async ($, on) => {
+  mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on, 'beneath row')
+  on('session.model', () => ({ value: 'Opus 5.5' }) as never)
+  on('session.cwd', () => ({ value: '/x' }) as never)
+  on('session.repo', () => ({ value: null }) as never)
+  on('settings.read', () => ({ value: {} }) as never)
+  on('session.measure', (_$, e) => ({ changed: e.changed }))
+  await $.session.measure({ context: { window: 200000 }, rateLimits: [], changed: ['context'] })
+  const ui = await $.ui.mount({
+    plugin: 'better-status-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 120 } as never,
+  })
+  expect(await ui.find({ type: 'Text', text: /^ Opus/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /beneath row/ })).toBeDefined()
   await ui.unmount()
 })

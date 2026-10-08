@@ -161,7 +161,18 @@ export const register: Register = on => {
       </Box>
     )
 
-    if (!(await read($, isDockerOpen))) return line
+    // Other mods draw in this band too (progress plans, prompts to save a rule):
+    // keep whatever they draw under the status line instead of replacing it.
+    const below = await next(e)
+
+    if (!(await read($, isDockerOpen))) {
+      return (
+        <Box flexDirection="column">
+          {line}
+          {below}
+        </Box>
+      )
+    }
 
     const list = await read($, containers)
     const rows =
@@ -208,6 +219,7 @@ export const register: Register = on => {
           </Box>
           {rows}
         </Box>
+        {below}
       </Box>
     )
   })
