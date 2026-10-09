@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionUsage } from 'claude-code'
 
 import type { Container, Containers, Snapshot, Window } from '../types'
-import { parsePs } from './docker'
+import { openCommands, parsePs } from './docker'
 import { basename, folderIn } from './gauge'
 import { SEPARATOR, fit } from './layout'
 
@@ -10,6 +10,9 @@ const snapshot = atom({ plugin: 'better-status-bar', key: 'snapshot' } as const,
 const tick = atom({ plugin: 'better-status-bar', key: 'tick' } as const, 0)
 const isDockerOpen = atom({ plugin: 'better-status-bar', key: 'isDockerOpen' } as const, false)
 const containers = atom({ plugin: 'better-status-bar', key: 'containers' } as const, null)
+
+/** How often the bar re-reads its figures and redraws, whatever else happens. */
+const REFRESH_MS = 30_000
 
 const DOCKER_LABEL = '🐳 Containers'
 /** Room the containers button takes at the end of the line: the separator, a two-cell glyph and the word. */
@@ -32,12 +35,21 @@ async function branchOf($: EngineInterface): Promise<string | undefined> {
   }
 }
 
+/** `promise`'s value, or `fallback` when it rejects: one failing read never empties the bar. */
+async function orElse<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await promise
+  } catch {
+    return fallback
+  }
+}
+
 async function measure($: EngineInterface, usage: Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>) {
   const [model, cwd, settings, repo] = await Promise.all([
-    $.session.model(),
-    $.session.cwd(),
-    $.settings.read(),
-    $.session.repo(),
+    orElse($.session.model(), 'Claude'),
+    orElse($.session.cwd(), ''),
+    orElse($.settings.read(), {} as Awaited<ReturnType<EngineInterface['settings']['read']>>),
+    orElse($.session.repo(), null),
   ])
   const next: Snapshot = {
     model,
@@ -54,6 +66,35 @@ async function measure($: EngineInterface, usage: Pick<SessionUsage, 'context' |
     weekly: windowOf(usage, 'seven_day'),
   }
   await update($, snapshot, () => next)
+}
+
+/** Re-reads every figure and redraws the bar, also after a draw the engine dropped. */
+async function refresh($: EngineInterface) {
+  try {
+    await measure($, await $.session.usage())
+    await update($, tick, n => n + 1)
+  } catch {
+    // Next period tries again.
+  }
+  $.ui.invalidate('ui.render')
+}
+
+/** Opens `url` in the browser with the first command this system has that works. */
+async function openInBrowser($: EngineInterface, url: string) {
+  const uname = await $.process
+    .run(['uname', '-sr'], { timeoutMs: 2000 })
+    .then(r => (r.exitCode === 0 ? r.stdout.trim() : undefined))
+    .catch(() => undefined)
+  for (const argv of openCommands(uname, url)) {
+    try {
+      const run = await $.process.run(argv, { timeoutMs: 10_000 })
+      // explorer.exe exits 1 even when it opened the page.
+      if (run.exitCode === 0 || argv[0]?.startsWith('explorer')) return
+    } catch {
+      // Not on this system: try the next one.
+    }
+  }
+  $.ui.toast(`Couldn't open ${url} in a browser`)
 }
 
 /** Whether `url` answers with an HTML page, or a redirect to one, within `ms`. */
@@ -94,21 +135,18 @@ async function listContainers($: EngineInterface): Promise<Containers> {
 }
 
 export const register: Register = on => {
+  // One timer per load: a reload runs register again and stops the old one.
+  let timer: { cancel: () => void } | undefined
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await measure($, await $.session.usage())
+    await refresh($)
 
-    // Keeps the reset countdowns current between measurements.
-    void (async () => {
-      try {
-        for (;;) {
-          await $.clock.sleep(60_000)
-          await update($, tick, n => n + 1)
-        }
-      } catch {
-        // The module was reloaded or the session ended.
-      }
-    })()
+    // A timer, not a sleep loop inside this hook: a hook's sleeps count against
+    // its time limit, so a loop here died after a while and the bar stopped
+    // redrawing (it vanished after the terminal sat idle or the machine slept).
+    timer?.cancel()
+    timer = $.clock.every(REFRESH_MS, () => void refresh($))
 
     return result
   })
@@ -192,7 +230,7 @@ export const register: Register = on => {
                 label={c.name}
                 plain
                 onPress={async () => {
-                  if (c.url) await $.process.run(['open', c.url])
+                  if (c.url) await openInBrowser($, c.url)
                 }}
               />
             ) : (

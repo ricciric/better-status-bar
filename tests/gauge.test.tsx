@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Snapshot } from '../types'
-import { hostPorts, parsePs } from '../hooks/docker'
+import { hostPorts, openCommands, parsePs } from '../hooks/docker'
 import { bar, colorFor, folderIn, untilReset } from '../hooks/gauge'
 import { fit, widthOf } from '../hooks/layout'
 
@@ -143,6 +143,7 @@ test('the containers button lists containers; only those with a page can be clic
           '{"Names":"db","Ports":"0.0.0.0:54322->5432/tcp","Status":"Up 6 days"}\n',
       ) as never
     }
+    if (e.argv[0] === 'uname') return ok('Darwin 25.2.0\n') as never
     if (e.argv[0] === 'open') opened.push(e.argv[1] ?? '')
     return ok('') as never
   })
@@ -209,5 +210,77 @@ test('another mod drawing in the band stays visible under the status line', asyn
   })
   expect(await ui.find({ type: 'Text', text: /^ Opus/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /beneath row/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the browser is opened with the command each system has', async () => {
+  const url = 'http://localhost:3000'
+  expect(openCommands('Darwin 25.2.0', url)).toEqual([['open', url]])
+  expect(openCommands('Linux 5.15.167.4-microsoft-standard-WSL2', url)).toEqual([
+    ['wslview', url],
+    ['cmd.exe', '/c', 'start', '', url],
+    ['explorer.exe', url],
+  ])
+  expect(openCommands('Linux 6.8.0-45-generic', url)[0]).toEqual(['xdg-open', url])
+  expect(openCommands(undefined, url)[0]).toEqual(['cmd', '/c', 'start', '', url])
+})
+
+test('on WSL without wslview, a container page opens through cmd.exe', async ($, on) => {
+  mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on)
+  const ran: string[] = []
+  const result = (exitCode: number, stdout = '') => ({
+    value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  })
+  on('session.model', () => ({ value: 'Opus 5.5' }) as never)
+  on('session.cwd', () => ({ value: '/x' }) as never)
+  on('session.repo', () => ({ value: null }) as never)
+  on('settings.read', () => ({ value: {} }) as never)
+  on('session.measure', (_$, e) => ({ changed: e.changed }))
+  on('process.run', (_$, e) => {
+    ran.push(e.argv.join(' '))
+    if (e.argv[0] === 'docker') return result(0, '{"Names":"web","Ports":"0.0.0.0:3000->80/tcp","Status":"Up"}\n') as never
+    if (e.argv[0] === 'uname') return result(0, 'Linux 5.15.167.4-microsoft-standard-WSL2\n') as never
+    if (e.argv[0] === 'wslview') return { deny: 'not found' } as never
+    return result(0) as never
+  })
+  on('http.fetch', () => ({ value: { status: 200, ok: true, headers: { 'content-type': 'text/html' }, text: '' } }) as never)
+  await $.session.measure({ context: { window: 200000 }, rateLimits: [], changed: ['context'] })
+  const ui = await $.ui.mount({
+    plugin: 'better-status-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 120 } as never,
+  })
+  await ui.press({ key: 'docker' })
+  await ui.press({ key: 'open-web' })
+  expect(ran.filter(r => !r.startsWith('docker') && !r.startsWith('uname'))).toEqual([
+    'wslview http://localhost:3000',
+    'cmd.exe /c start  http://localhost:3000',
+  ])
+  await ui.unmount()
+})
+
+test('the bar refreshes on its own every 30 seconds, with no turn in between', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  engineBand(on)
+  let model = 'Opus 5.5'
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }) as never)
+  on('session.model', () => ({ value: model }) as never)
+  on('session.cwd', () => ({ value: '/x' }) as never)
+  on('session.repo', () => ({ value: null }) as never)
+  on('settings.read', () => ({ value: {} }) as never)
+  await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({
+    plugin: 'better-status-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 120 } as never,
+  })
+  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5/ })).toBeDefined()
+  model = 'Sonnet 5.5'
+  await clock.advance(30_000)
+  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.5/ })).toBeDefined()
   await ui.unmount()
 })

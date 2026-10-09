@@ -27,6 +27,10 @@ Each bar is a thin 10-cell line that fills in half cells. Its colour slides smoo
 
 The session and week bars need a Claude subscription (Pro or Max). They show `--` until the first reply of the session reports your limits.
 
+## It stays up to date
+
+The bar re-reads its figures after every turn and every 30 seconds on its own, so the reset countdowns keep moving and the bar redraws itself after the terminal has been idle or the computer has slept.
+
 ## It fits the window
 
 The bar always stays on one line. On a narrower terminal it gives up details one at a time, in this order:
@@ -101,7 +105,7 @@ and either start Claude Code with `claude --plugin-dir ~/.claude/mods/better-sta
 - Claude Code with function hooks enabled (see above)
 - `git` for the branch
 - Docker, only for the containers menu
-- macOS for opening container pages (it uses `open`); everything else works anywhere
+- Works on macOS, Linux, WSL and Windows. Container pages open with `open` on macOS, `xdg-open` on Linux, and in the Windows browser from WSL (`wslview` if [wslu](https://github.com/wslutilities/wslu) is installed, else `cmd.exe start`)
 
 ## How it works
 
